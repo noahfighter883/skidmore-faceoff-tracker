@@ -8,6 +8,7 @@ Log Skidmore hockey faceoffs live, see results by zone and by opposing player, a
 2. Check the roster under **Games and roster**. Centers ticked there appear first when logging.
 3. Click **Start a game** and enter the opponent.
 4. Check the rink captions. If Skidmore starts at the other end, click **Flip rink**. The rink then flips by itself at each period change.
+5. Optional: type the opposing centers' numbers into **New number**, pressing Return after each. They stay as buttons for that game. To remove a mistake, click the number, then **Remove**. Numbers with a faceoff logged can't be removed.
 
 ## Logging a faceoff
 

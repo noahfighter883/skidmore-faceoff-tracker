@@ -1,7 +1,7 @@
 import {
   CIRCLES, MIN_DRAWS, PERIODS, ZONES, circlePosition, circleRecords, compareRecords, draws,
-  filterFaceoffs, formatPct, formatRecord, headToHead, isFlipped, opponents, pct, summaryText,
-  tally, zoneOf,
+  filterFaceoffs, formatPct, formatRecord, headToHead, isFlipped, opponentNumbers, opponents, pct,
+  summaryText, tally, zoneOf,
 } from './stats.js';
 import { downloadFile, gameToCsv, isValidState, load, save } from './store.js';
 
@@ -164,9 +164,8 @@ function renderEntry() {
   const game = currentGame();
   const step = nextStep();
   const { skid, opp } = ui.sel;
-  const used = new Set(game.faceoffs.map((f) => f.opp));
-  if (opp !== null) used.add(opp);
-  const oppNums = [...used].sort((a, b) => a - b);
+  const oppNums = opponentNumbers(game);
+  const canRemoveOpp = opp !== null && !game.faceoffs.some((f) => f.opp === opp);
   const showMessage = step === 'circle' && ui.message;
   const ready = step === 'winner';
 
@@ -188,6 +187,7 @@ function renderEntry() {
           <input id="oppInput" inputmode="numeric" maxlength="2" pattern="[0-9]{1,2}" placeholder="New number" autocomplete="off">
           <button type="submit">Add</button>
         </form>
+        ${canRemoveOpp ? `<button type="button" class="plain" data-action="removeOpp" data-value="${opp}">Remove #${opp}</button>` : ''}
       </div>
     </div>
     <p class="context">${contextLine(game)}</p>
@@ -488,6 +488,12 @@ const actions = {
   circle(value) { pick('circle', value); },
   skid(value) { pick('skid', Number(value)); },
   opp(value) { pick('opp', Number(value)); },
+  removeOpp(value) {
+    const game = currentGame();
+    game.oppNumbers = (game.oppNumbers ?? []).filter((n) => n !== Number(value));
+    ui.sel.opp = null;
+    persist();
+  },
   clear() { clearSelection(); ui.message = ''; },
   win(value) {
     const game = currentGame();
@@ -596,9 +602,16 @@ document.addEventListener('submit', (event) => {
       $('oppInput').focus();
       return;
     }
-    ui.sel.opp = Number(text);
+    const num = Number(text);
+    const game = currentGame();
+    game.oppNumbers = [...new Set([...(game.oppNumbers ?? []), num])];
+    persist();
+    // Mid-entry the new number is the one being logged. Otherwise keep typing the lineup.
+    const midEntry = ui.sel.circle !== null || ui.sel.skid !== null;
+    if (midEntry) ui.sel.opp = num;
     ui.message = '';
     render();
+    if (!midEntry) $('oppInput').focus();
   }
   if (event.target.id === 'addPlayer') {
     event.preventDefault();

@@ -131,6 +131,12 @@ export function opponents(faceoffs) {
   return [...map.values()].sort((a, b) => draws(b.rec) - draws(a.rec) || a.num - b.num);
 }
 
+// Every opposing number to offer as a button: added by hand or used in a faceoff.
+export function opponentNumbers(game) {
+  const numbers = new Set([...(game.oppNumbers ?? []), ...game.faceoffs.map((f) => f.opp)]);
+  return [...numbers].sort((a, b) => a - b);
+}
+
 export function headToHead(faceoffs, skid, opp) {
   const rec = blank();
   for (const f of faceoffs) {
