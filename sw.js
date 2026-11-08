@@ -1,6 +1,6 @@
 // Lets the app load at the rink without Wi-Fi once it has been opened online.
 // Serves the saved copy straight away and refreshes it in the background.
-const CACHE = 'skidmore-faceoffs-5';
+const CACHE = 'skidmore-faceoffs-6';
 const FILES = ['./', 'index.html', 'styles.css', 'js/app.js', 'js/stats.js', 'js/store.js', 'js/seed.js'];
 
 // GitHub Pages lets browsers reuse files for 10 minutes, so both downloads below skip or

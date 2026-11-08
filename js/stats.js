@@ -5,8 +5,10 @@ export const PERIODS = ['1', '2', '3', 'OT'];
 
 // Win % is muted, and players are left out of "toughest/easiest", below this many draws.
 export const MIN_DRAWS = 4;
-// Fewer draws than this in one zone is not enough to call it a best or worst zone.
-export const MIN_ZONE_DRAWS = 3;
+// Fewer draws than this is not enough to call out a player in a zone or a matchup.
+export const MIN_NOTABLE_DRAWS = 3;
+// How many strong spots, weak spots and matchups the coach message lists.
+const NOTABLE_LIST_LENGTH = 2;
 
 // The nine faceoff circles, positioned for Skidmore defending the left end.
 // x and y are in feet on a 200 x 85 rink. Zone 1 is left of the goal, facing that goal.
@@ -209,22 +211,23 @@ export function compareRecords(a, b, direction = 1) {
   return direction * (pb - pa) || draws(b) - draws(a);
 }
 
-function bestAndWorstZones(zones) {
-  const ranked = ZONES
-    .map((zone) => ({ zone, rec: zones[zone] }))
-    .filter(({ rec }) => draws(rec) >= MIN_ZONE_DRAWS)
-    .sort((a, b) => compareRecords(a.rec, b.rec));
-  const best = ranked[0];
-  const worst = ranked[ranked.length - 1];
-  return {
-    best: best && pct(best.rec) > 50 ? best : null,
-    worst: worst && pct(worst.rec) < 50 ? worst : null,
-  };
-}
-
 const line = (label, rec) => `${label} ${formatRecord(rec)}${draws(rec) ? ` (${formatPct(rec)})` : ''}`;
 
-// The key findings to text the coach. Plain text, short enough to read on a phone.
+// Winning records, best first: highest win %, then the larger sample.
+function bestOf(items) {
+  return items.filter(({ rec }) => pct(rec) > 50).sort((a, b) => compareRecords(a.rec, b.rec));
+}
+
+// Losing records, worst first: lowest win %, then the larger sample.
+function worstOf(items) {
+  return items.filter(({ rec }) => pct(rec) < 50)
+    .sort((a, b) => pct(a.rec) - pct(b.rec) || draws(b.rec) - draws(a.rec));
+}
+
+const enoughDraws = ({ rec }) => draws(rec) >= MIN_NOTABLE_DRAWS;
+
+// The key findings to text the coach: who stands out by zone and in individual matchups.
+// He already gets each player's overall numbers, so those are left out. Plain text for a phone.
 export function summaryText(game, roster, period = 'all') {
   const faceoffs = filterFaceoffs(game.faceoffs, period);
   const { team, players } = tally([game], period);
@@ -234,41 +237,44 @@ export function summaryText(game, roster, period = 'all') {
 
   if (!draws(team.total)) return `No faceoffs logged${scope} against ${game.opponent} yet.`;
 
-  const out = [
-    `Faceoffs vs ${game.opponent}${scope}: ${formatRecord(team.total)} (${formatPct(team.total)})`,
-    [line('Defense', team.D), line('Offense', team.O), line('Neutral', team.N)].join('\n'),
-    '',
-  ];
+  const out = [`Faceoffs vs ${game.opponent}${scope}: ${formatRecord(team.total)} (${formatPct(team.total)})`, ''];
 
-  const isCenter = (num) => roster.find((p) => p.num === num)?.center;
-  const takers = [...players.entries()]
-    .filter(([num, z]) => isCenter(num) || draws(z.total) >= MIN_DRAWS)
-    .sort((a, b) => draws(b[1].total) - draws(a[1].total));
-  for (const [num, zones] of takers) {
-    const { best, worst } = bestAndWorstZones(zones);
-    const notes = [];
-    if (best) notes.push(`best ${best.zone} ${formatRecord(best.rec)}`);
-    if (worst) notes.push(`worst ${worst.zone} ${formatRecord(worst.rec)}`);
-    out.push(`${line(label(num), zones.total)}${notes.length ? `: ${notes.join(', ')}` : ''}`);
+  // Team record for each part of the ice, with the players who stand out there.
+  const areas = [['Defense', 'D'], ['Offense', 'O'], ['Neutral', 'N']];
+  for (const [name, key] of areas) {
+    const inArea = [...players.entries()]
+      .map(([num, zones]) => ({ text: label(num), rec: zones[key] }))
+      .filter(enoughDraws);
+    const [best] = bestOf(inArea);
+    const [worst] = worstOf(inArea);
+    out.push(line(name, team[key]));
+    if (best) out.push(`Best: ${best.text} ${formatRecord(best.rec)}`);
+    if (worst) out.push(`Worst: ${worst.text} ${formatRecord(worst.rec)}`);
   }
-  // Keeps the listed players adding up to the team total.
-  const listed = new Set(takers.map(([num]) => num));
-  const others = blank();
-  for (const [num, zones] of players) {
-    if (!listed.has(num)) addTo(others, zones.total.w, zones.total.l);
-  }
-  if (draws(others)) out.push(line('Others', others));
 
-  const qualified = opponents(faceoffs)
-    .filter((o) => draws(o.rec) >= MIN_DRAWS)
-    .sort((a, b) => compareRecords(a.rec, b.rec));
-  if (qualified.length) {
-    const easiest = qualified[0];
-    const toughest = qualified[qualified.length - 1];
-    out.push('');
-    if (pct(toughest.rec) < 50) out.push(`Toughest: their #${toughest.num}, we are ${formatRecord(toughest.rec)} against them`);
-    if (pct(easiest.rec) > 50) out.push(`Easiest: their #${easiest.num}, we are ${formatRecord(easiest.rec)} against them`);
-    if (out[out.length - 1] === '') out.pop();
+  // Single circles, where a player's split can differ from their side of the ice.
+  const spots = [...players.entries()].flatMap(([num, zones]) => ['D1', 'D2', 'O1', 'O2']
+    .map((zone) => ({ text: `${label(num)} ${zone}`, rec: zones[zone] })))
+    .filter(enoughDraws);
+  const listRecords = (items) => items.slice(0, NOTABLE_LIST_LENGTH)
+    .map(({ text, rec }) => `${text} ${formatRecord(rec)}`);
+  const strong = listRecords(bestOf(spots));
+  const weak = listRecords(worstOf(spots));
+  if (strong.length || weak.length) out.push('');
+  if (strong.length) out.push('Strong spots:', ...strong);
+  if (weak.length) out.push('Weak spots:', ...weak);
+
+  // Individual matchups.
+  const matchups = opponents(faceoffs).flatMap((o) => [...o.vs.entries()]
+    .map(([num, rec]) => ({ text: `${label(num)} vs their #${o.num}`, rec })))
+    .filter(enoughDraws);
+  const bestMatchups = listRecords(bestOf(matchups));
+  const worstMatchups = listRecords(worstOf(matchups));
+  out.push('');
+  if (bestMatchups.length) out.push('Best matchups:', ...bestMatchups);
+  if (worstMatchups.length) out.push('Worst matchups:', ...worstMatchups);
+  if (!bestMatchups.length && !worstMatchups.length) {
+    out.push(`No clear matchups yet (needs ${MIN_NOTABLE_DRAWS}+ draws between the same two players).`);
   }
   return out.join('\n');
 }

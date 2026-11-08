@@ -48,6 +48,14 @@ If you do log under the wrong period, click **Fix period mistake** beside Recent
 
 Click **Coach message**, edit the draft if you want, then click **Copy message** and paste it into your text. It covers the whole game unless you choose a single period in the dialog.
 
+The message leaves out each player's overall record, because the coach already has those. It shows:
+
+- the team's Defense, Offense and Neutral records, with the best and worst player in each
+- the strongest and weakest players at a single circle
+- the best and worst individual matchups
+
+A player needs at least 3 draws in that zone or matchup to be named. Best means a winning record and worst means a losing one.
+
 ## Keeping your data
 
 Game data is saved only in the browser on your laptop. It isn't sent anywhere or stored in this repo. Clearing browser data erases it, and it won't appear in another browser or on another computer, so download a backup after each game from **Games and roster**, which also shows when you last did.

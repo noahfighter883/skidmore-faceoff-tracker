@@ -177,12 +177,6 @@ test('repair moves only the latest faceoffs and corrects zones when asked', () =
   assert.equal(list[2].period, '1');
 });
 
-test('summary groups the remaining players so the lines add up', () => {
-  const text = summaryText(game([fo('O1', 16, 9, 'S'), fo('O1', 8, 9, 'S'), fo('O1', 10, 9, 'O')]), SEED_ROSTER);
-  assert.match(text, /^Others 1-1 \(50%\)$/m);
-  assert.doesNotMatch(text, /Zimovcak|Spaulding/);
-});
-
 test('circle records separate neutral circles', () => {
   const records = circleRecords([fo('C', 15, 9, 'S'), fo('N-DB', 15, 9, 'O')]);
   assert.deepEqual(pair(records.C), [1, 0]);
@@ -197,35 +191,6 @@ test('empty records sort last in both directions', () => {
   assert.ok(compareRecords(empty, some, -1) > 0);
 });
 
-test('summary leaves out opponents below the minimum sample', () => {
-  const few = summaryText(game([fo('O1', 15, 9, 'S'), fo('O1', 15, 9, 'S'), fo('O1', 15, 9, 'S')]), SEED_ROSTER);
-  assert.doesNotMatch(few, /Easiest|Toughest/);
-
-  const enough = summaryText(game([
-    fo('O1', 15, 9, 'S'), fo('O1', 15, 9, 'S'), fo('O1', 15, 9, 'S'), fo('O2', 15, 9, 'S'),
-    fo('D1', 16, 7, 'O'), fo('D1', 16, 7, 'O'), fo('D1', 16, 7, 'O'), fo('D2', 16, 7, 'S'),
-  ]), SEED_ROSTER);
-  assert.match(enough, /Easiest: their #9, we are 4-0/);
-  assert.match(enough, /Toughest: their #7, we are 1-3/);
-});
-
-test('summary names best and worst zones only with enough draws', () => {
-  const text = summaryText(game([
-    fo('O1', 16, 9, 'S'), fo('O1', 16, 9, 'S'), fo('O1', 16, 9, 'S'),
-    fo('D1', 16, 9, 'O'), fo('D1', 16, 9, 'O'), fo('D1', 16, 9, 'O'),
-    fo('D2', 16, 9, 'O'),
-  ]), SEED_ROSTER);
-  assert.match(text, /#16 Fogu 3-4 \(43%\): best O1 3-0, worst D1 0-3/);
-  assert.doesNotMatch(text, /D2 0-1/);
-});
-
-test('summary never calls a losing zone the best or a winning zone the worst', () => {
-  const losing = summaryText(game([fo('D1', 12, 9, 'O'), fo('D1', 12, 9, 'O'), fo('D1', 12, 9, 'O')]), SEED_ROSTER);
-  assert.match(losing, /#12 Chenevert 0-3 \(0%\): worst D1 0-3$/m);
-  const winning = summaryText(game([fo('O1', 16, 9, 'S'), fo('O1', 16, 9, 'S'), fo('O1', 16, 9, 'S')]), SEED_ROSTER);
-  assert.match(winning, /#16 Fogu 3-0 \(100%\): best O1 3-0$/m);
-});
-
 test('summary states the score and handles an empty game', () => {
   const text = summaryText(game([fo('O1', 15, 9, 'S'), fo('D1', 15, 9, 'O')]), SEED_ROSTER);
   assert.match(text, /^Faceoffs vs Hamilton: 1-1 \(50%\)/);
@@ -238,4 +203,58 @@ test('summary lists period scope', () => {
   const g = game([fo('O1', 15, 9, 'S', '2')]);
   assert.match(summaryText(g, SEED_ROSTER, '2'), /Hamilton in period 2:/);
   assert.equal(summaryText(g, SEED_ROSTER, 'OT'), 'No faceoffs logged in OT against Hamilton yet.');
+});
+
+const notable = [
+  fo('O1', 16, 9, 'S'), fo('O1', 16, 9, 'S'), fo('O1', 16, 9, 'S'),
+  fo('D1', 12, 9, 'O'), fo('D1', 12, 9, 'O'), fo('D1', 12, 9, 'O'),
+  fo('D2', 15, 7, 'S'), fo('D2', 15, 7, 'S'), fo('D2', 15, 7, 'O'),
+];
+
+test('coach message leaves out each player overall record', () => {
+  const text = summaryText(game(notable), SEED_ROSTER);
+  assert.doesNotMatch(text, /\(\d+%\): /);
+  assert.doesNotMatch(text, /^#\d+ \w+ \d+-\d+ \(/m);
+  assert.doesNotMatch(text, /Others|Toughest|Easiest/);
+});
+
+test('coach message names the best and worst player on each side of the ice', () => {
+  const text = summaryText(game(notable), SEED_ROSTER);
+  assert.match(text, /^Defense 2-4 \(33%\)\nBest: #15 Jenkins 2-1\nWorst: #12 Chenevert 0-3$/m);
+  assert.match(text, /^Offense 3-0 \(100%\)\nBest: #16 Fogu 3-0\nNeutral 0-0$/m);
+});
+
+test('coach message lists strong and weak circles', () => {
+  const text = summaryText(game(notable), SEED_ROSTER);
+  assert.match(text, /^Strong spots:\n#16 Fogu O1 3-0\n#15 Jenkins D2 2-1$/m);
+  assert.match(text, /^Weak spots:\n#12 Chenevert D1 0-3$/m);
+});
+
+test('coach message lists best and worst individual matchups', () => {
+  const text = summaryText(game(notable), SEED_ROSTER);
+  assert.match(text, /^Best matchups:\n#16 Fogu vs their #9 3-0\n#15 Jenkins vs their #7 2-1$/m);
+  assert.match(text, /^Worst matchups:\n#12 Chenevert vs their #9 0-3$/m);
+});
+
+test('coach message ignores small samples and caps each list', () => {
+  const few = summaryText(game([fo('O1', 16, 9, 'S'), fo('O1', 16, 9, 'S'), fo('D1', 12, 9, 'O')]), SEED_ROSTER);
+  assert.doesNotMatch(few, /Best|Worst|spots/);
+  assert.match(few, /No clear matchups yet \(needs 3\+ draws/);
+
+  const many = [12, 15, 16, 20].flatMap((num) => [fo('O1', num, 9, 'S'), fo('O1', num, 9, 'S'), fo('O1', num, 9, 'S')]);
+  const text = summaryText(game(many), SEED_ROSTER);
+  assert.equal(text.match(/vs their #9 3-0/g).length, 2);
+  assert.equal(text.match(/O1 3-0/g).length, 2);
+});
+
+test('coach message never calls a losing record best or a winning record worst', () => {
+  const losing = summaryText(game([fo('D1', 12, 9, 'O'), fo('D1', 12, 9, 'O'), fo('D1', 12, 9, 'O')]), SEED_ROSTER);
+  assert.doesNotMatch(losing, /Best/);
+  const winning = summaryText(game([fo('O1', 16, 9, 'S'), fo('O1', 16, 9, 'S'), fo('O1', 16, 9, 'S')]), SEED_ROSTER);
+  assert.doesNotMatch(winning, /Worst|Weak/);
+});
+
+test('an even record is neither best nor worst', () => {
+  const list = [fo('O1', 16, 9, 'S'), fo('O1', 16, 9, 'S'), fo('O1', 16, 9, 'O'), fo('O1', 16, 9, 'O')];
+  assert.doesNotMatch(summaryText(game(list), SEED_ROSTER), /Best|Worst|spots/);
 });
