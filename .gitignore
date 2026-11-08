@@ -1,0 +1,4 @@
+# Source sheets stay local and out of the public repo
+*.pdf
+.claude/
+.DS_Store
