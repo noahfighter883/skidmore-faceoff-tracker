@@ -186,10 +186,11 @@ export function opponents(faceoffs) {
   return [...map.values()].sort((a, b) => draws(b.rec) - draws(a.rec) || a.num - b.num);
 }
 
-// Every opposing number to offer as a button: added by hand or used in a faceoff.
+// Every opposing number to offer as a button, most faceoffs first. Ties go by jersey number.
 export function opponentNumbers(game) {
-  const numbers = new Set([...(game.oppNumbers ?? []), ...game.faceoffs.map((f) => f.opp)]);
-  return [...numbers].sort((a, b) => a - b);
+  const counts = new Map((game.oppNumbers ?? []).map((n) => [n, 0]));
+  for (const f of game.faceoffs) counts.set(f.opp, (counts.get(f.opp) ?? 0) + 1);
+  return [...counts.keys()].sort((a, b) => counts.get(b) - counts.get(a) || a - b);
 }
 
 export function headToHead(faceoffs, skid, opp) {

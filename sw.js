@@ -1,6 +1,6 @@
 // Lets the app load at the rink without Wi-Fi once it has been opened online.
 // Serves the saved copy straight away and refreshes it in the background.
-const CACHE = 'skidmore-faceoffs-3';
+const CACHE = 'skidmore-faceoffs-4';
 const FILES = ['./', 'index.html', 'styles.css', 'js/app.js', 'js/stats.js', 'js/store.js', 'js/seed.js'];
 
 self.addEventListener('install', (event) => {

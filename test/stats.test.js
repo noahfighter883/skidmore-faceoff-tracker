@@ -122,7 +122,12 @@ test('opponent records stay on Skidmore\'s side and split by player', () => {
 test('opposing numbers stay listed with or without a faceoff', () => {
   assert.deepEqual(opponentNumbers(game([])), []);
   assert.deepEqual(opponentNumbers({ ...game([]), oppNumbers: [30, 7] }), [7, 30]);
-  assert.deepEqual(opponentNumbers({ ...game([fo('C', 15, 9, 'S'), fo('C', 15, 30, 'S')]), oppNumbers: [30, 7] }), [7, 9, 30]);
+  assert.deepEqual(opponentNumbers({ ...game([fo('C', 15, 9, 'S'), fo('C', 15, 30, 'S')]), oppNumbers: [30, 7] }), [9, 30, 7]);
+});
+
+test('opposing numbers rank by faceoffs taken, with ties by number', () => {
+  const list = [fo('C', 15, 30, 'S'), fo('C', 15, 30, 'O'), fo('C', 15, 30, 'S'), fo('C', 15, 12, 'S'), fo('C', 15, 12, 'S'), fo('C', 15, 44, 'S'), fo('C', 15, 5, 'S')];
+  assert.deepEqual(opponentNumbers(game(list)), [30, 12, 5, 44]);
 });
 
 test('swapping ends gives the circle really played at that screen position', () => {
