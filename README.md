@@ -17,13 +17,28 @@ Log Skidmore hockey faceoffs live, see results by zone and by opposing player, a
 3. Click the opposing number, or type a new one and press Return.
 4. Click who won.
 
-Click **Undo last** to remove the latest faceoff, or click any recent faceoff to edit or delete it. Press Esc or **Clear** to start an entry over.
+The entry area flashes green for a Skidmore win and red for a loss. Click **Undo** beside the message to remove the latest faceoff, or click any recent faceoff to edit or delete it. Press Esc or **Clear** to start an entry over.
 
-Remember to change the **Period** at the top of the screen. It controls the rink direction and how faceoffs are filtered.
+### Keyboard
+
+| Step | Keys |
+|---|---|
+| Rink circle | `Q` `W` `E` `R` top row, `D` center ice, `Z` `X` `C` `V` bottom row. The letter beside each circle shows its key. |
+| Skidmore player | Type the jersey number |
+| Opposing player | Type the number, then press Return |
+| Who won | `J` Skidmore, `K` opponent |
+| Undo last | `U` |
+| Clear the entry | `Esc` |
+
+### Period and rink direction
+
+**Now playing** above the rink sets the period and which way the rink faces, so change it at each intermission. After 8 minutes without a faceoff, the app asks whether the period has changed and won't save the next faceoff until you answer.
+
+If you do log under the wrong period, click **Fix period mistake** beside Recent faceoffs. It moves the latest faceoffs to the right period and, if the rink was backwards, corrects their zones.
 
 ## Reading the stats
 
-- **Live stats** stay beside the rink and update after every faceoff. Use **Game, P1, P2, P3, OT** to change what they show.
+- **Live stats** stay beside the rink and update after every faceoff. Use **Game, This period, P1, P2, P3, OT** to change what they show. A note appears if you're viewing a different period from the one you're logging.
 - **Records are always from Skidmore's side.** Against their #9, 3-1 means Skidmore won 3 of 4.
 - **Zones:** zone 1 is left of the goal, facing that goal. All neutral circles count as one neutral zone.
 - **Colors:** green is 55% or better and red is 45% or worse, once there are at least 4 draws. Under 4 draws the percentage is muted.
@@ -31,11 +46,11 @@ Remember to change the **Period** at the top of the screen. It controls the rink
 
 ## Texting the coach
 
-Click **Text the coach**, edit the draft if you want, then click **Copy message** and paste it into your text. It follows the Game or period filter you have selected in Live stats.
+Click **Coach message**, edit the draft if you want, then click **Copy message** and paste it into your text. It covers the whole game unless you choose a single period in the dialog.
 
 ## Keeping your data
 
-Game data is saved only in the browser on your laptop. It isn't sent anywhere or stored in this repo. Clearing browser data erases it, and it won't appear in another browser or on another computer, so download a backup after each game from **Games and roster**.
+Game data is saved only in the browser on your laptop. It isn't sent anywhere or stored in this repo. Clearing browser data erases it, and it won't appear in another browser or on another computer, so download a backup after each game from **Games and roster**, which also shows when you last did.
 
 ## Development
 

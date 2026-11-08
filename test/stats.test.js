@@ -2,8 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { SEED_GAMES, SEED_ROSTER } from '../js/seed.js';
 import {
-  CIRCLES, circlePosition, circleRecords, compareRecords, headToHead, isFlipped,
-  opponentNumbers, opponents, summaryText, tally, zoneOf,
+  CIRCLES, PERIOD_GAP_MS, circleKey, circlePosition, circleRecords, compareRecords, headToHead,
+  isFlipped, lastStretchLength, needsPeriodCheck, opponentNumbers, opponents, repairFaceoffs,
+  summaryText, swapEnds, tally, zoneOf,
 } from '../js/stats.js';
 
 const pair = (rec) => [rec.w, rec.l];
@@ -122,6 +123,59 @@ test('opposing numbers stay listed with or without a faceoff', () => {
   assert.deepEqual(opponentNumbers(game([])), []);
   assert.deepEqual(opponentNumbers({ ...game([]), oppNumbers: [30, 7] }), [7, 30]);
   assert.deepEqual(opponentNumbers({ ...game([fo('C', 15, 9, 'S'), fo('C', 15, 30, 'S')]), oppNumbers: [30, 7] }), [7, 9, 30]);
+});
+
+test('swapping ends gives the circle really played at that screen position', () => {
+  for (const c of CIRCLES) {
+    const shownAt = circlePosition(c, true);
+    const swapped = CIRCLES.find((x) => x.id === swapEnds(c.id));
+    assert.deepEqual(circlePosition(swapped, false), shownAt, c.id);
+    assert.equal(swapEnds(swapEnds(c.id)), c.id);
+  }
+});
+
+test('circle keys follow screen position and each key is used once', () => {
+  const at = (id) => CIRCLES.find((c) => c.id === id);
+  assert.equal(circleKey(at('D2'), false), 'q');
+  assert.equal(circleKey(at('D1'), false), 'z');
+  assert.equal(circleKey(at('O1'), false), 'r');
+  assert.equal(circleKey(at('C'), false), 'd');
+  assert.equal(circleKey(at('D1'), true), 'r');
+  assert.equal(circleKey(at('O1'), true), 'z');
+  for (const flipped of [false, true]) {
+    assert.equal(new Set(CIRCLES.map((c) => circleKey(c, flipped))).size, 9);
+  }
+});
+
+const timed = (minutes) => ({ ...fo('O1', 15, 9, 'S'), at: new Date(minutes * 60000).toISOString() });
+
+test('a long gap asks about the period until it is answered', () => {
+  const g = { ...game([timed(0)]), period: '1' };
+  assert.equal(needsPeriodCheck(g, PERIOD_GAP_MS - 1), false);
+  assert.equal(needsPeriodCheck(g, PERIOD_GAP_MS), true);
+  assert.equal(needsPeriodCheck({ ...g, periodConfirmedAt: new Date(PERIOD_GAP_MS).toISOString() }, PERIOD_GAP_MS + 1), false);
+  assert.equal(needsPeriodCheck({ ...g, period: 'OT' }, PERIOD_GAP_MS), false);
+  assert.equal(needsPeriodCheck(game([]), PERIOD_GAP_MS), false);
+});
+
+test('the default repair covers the faceoffs since the last long gap', () => {
+  assert.equal(lastStretchLength([]), 0);
+  assert.equal(lastStretchLength([timed(0), timed(1), timed(2)]), 1);
+  assert.equal(lastStretchLength([timed(0), timed(1), timed(30), timed(31), timed(32)]), 3);
+});
+
+test('repair moves only the latest faceoffs and corrects zones when asked', () => {
+  const list = [fo('D1', 15, 9, 'S'), fo('O1', 15, 9, 'S'), fo('N-DB', 15, 9, 'O')];
+  const fixed = repairFaceoffs(list, 2, '2', true);
+  assert.deepEqual(fixed.map((f) => [f.period, f.circle]), [['1', 'D1'], ['2', 'D1'], ['2', 'N-OT']]);
+  assert.deepEqual(repairFaceoffs(list, 1, '2', false).at(-1).circle, 'N-DB');
+  assert.equal(list[2].period, '1');
+});
+
+test('summary groups the remaining players so the lines add up', () => {
+  const text = summaryText(game([fo('O1', 16, 9, 'S'), fo('O1', 8, 9, 'S'), fo('O1', 10, 9, 'O')]), SEED_ROSTER);
+  assert.match(text, /^Others 1-1 \(50%\)$/m);
+  assert.doesNotMatch(text, /Zimovcak|Spaulding/);
 });
 
 test('circle records separate neutral circles', () => {

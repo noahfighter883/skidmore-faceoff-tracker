@@ -1,21 +1,26 @@
 import {
-  CIRCLES, MIN_DRAWS, PERIODS, ZONES, circlePosition, circleRecords, compareRecords, draws,
-  filterFaceoffs, formatPct, formatRecord, headToHead, isFlipped, opponentNumbers, opponents, pct,
-  summaryText, tally, zoneOf,
+  CIRCLES, MIN_DRAWS, PERIODS, ZONES, circleKey, circlePosition, circleRecords, compareRecords,
+  draws, filterFaceoffs, formatPct, formatRecord, headToHead, isFlipped, lastStretchLength,
+  needsPeriodCheck, nextPeriod, opponentNumbers, opponents, pct, repairFaceoffs, summaryText,
+  swapEnds, tally, zoneOf,
 } from './stats.js';
-import { downloadFile, gameToCsv, isValidState, load, save } from './store.js';
+import { KEY, downloadFile, gameToCsv, isValidState, load, save } from './store.js';
 
 const state = load();
 const ui = {
   view: 'live',
   sel: { circle: null, skid: null, opp: null },
   message: '',
+  outcome: '',
   filter: 'all',
   sort: { key: 'total', dir: 1 },
   openOpp: null,
   statsScope: null,
   editingId: null,
   editingGameId: null,
+  periodCheckShown: false,
+  jerseyTyped: '',
+  jerseyTimer: null,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -27,8 +32,15 @@ const player = (num) => state.roster.find((p) => p.num === num);
 const skidLabel = (num) => (player(num) ? `#${num} ${player(num).name}` : `#${num}`);
 const rosterOrder = () => [...state.roster].sort((a, b) => (b.center - a.center) || (a.num - b.num));
 const periodLabel = (p) => (p === 'OT' ? 'OT' : `P${p}`);
-const circleLabel = (circle) => (circle.zone === 'N' ? (circle.id === 'C' ? 'Center ice' : `Neutral ${circle.id.slice(2)}`) : circle.zone);
 const zoneLabel = (id) => (zoneOf(id) === 'N' ? 'Neutral' : zoneOf(id));
+const activeFilter = (game) => (ui.filter === 'now' ? game.period : ui.filter);
+
+const NEUTRAL_NAMES = { 'N-DB': 'Neutral by D1', 'N-DT': 'Neutral by D2', 'N-OT': 'Neutral by O1', 'N-OB': 'Neutral by O2' };
+const circleLabel = (circle) => (circle.id === 'C' ? 'Center ice' : NEUTRAL_NAMES[circle.id] ?? circle.zone);
+
+const ICON_ARROW = '<svg class="icon" viewBox="0 0 24 12" aria-hidden="true"><path d="M0 6h20M15 1l6 5-6 5" fill="none" stroke="currentColor" stroke-width="2.5"/></svg>';
+const ICON_SORT = '<svg class="icon-small" viewBox="0 0 8 6" aria-hidden="true"><path d="M4 0l4 6H0z" fill="currentColor"/></svg>';
+const ICON_OPEN = '<svg class="icon-small" viewBox="0 0 6 8" aria-hidden="true"><path d="M0 0l6 4-6 4z" fill="currentColor"/></svg>';
 
 function persist() {
   showNotice(save(state) ? '' : 'This browser did not save your last change. Download a backup from Games and roster now.');
@@ -37,6 +49,15 @@ function persist() {
 function showNotice(text) {
   $('notice').textContent = text;
   $('notice').hidden = !text;
+}
+
+function formatDate(date) {
+  if (!date) return '';
+  return new Date(`${date}T00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+function gameTitle(game) {
+  return game.date ? `${game.opponent}, ${formatDate(game.date)}` : game.opponent;
 }
 
 function toneClass(rec) {
@@ -59,20 +80,44 @@ function recCell(rec) {
 // Top bar
 
 function renderBar() {
-  const game = currentGame();
+  const game = ui.view === 'live' ? currentGame() : null;
   $('matchup').textContent = game ? `Skidmore vs ${game.opponent}` : 'Skidmore faceoffs';
+  const total = game && tally([game]).team.total;
   $('barGame').innerHTML = !game ? '' : `
-    <span class="score" aria-label="Skidmore faceoff record">${formatRecord(tally([game]).team.total)}<small>${formatPct(tally([game]).team.total)}</small></span>
-    <span class="group" role="group" aria-label="Current period">
-      <span class="group-label">Period</span>
-      ${PERIODS.map((p) => `<button type="button" class="pick" data-action="period" data-value="${p}" aria-pressed="${game.period === p}">${p}</button>`).join('')}
-    </span>
-    <button type="button" class="ghost" data-action="flip">Flip rink</button>
-    <button type="button" class="send" data-action="openText">Text the coach</button>`;
+    <span class="score" aria-label="Skidmore faceoff record">${formatRecord(total)}<small>${formatPct(total)}</small></span>
+    <button type="button" class="send" data-action="openText">Coach message</button>`;
   document.querySelectorAll('.tabs button').forEach((b) => {
     if (b.dataset.value === ui.view) b.setAttribute('aria-current', 'page');
     else b.removeAttribute('aria-current');
   });
+}
+
+// Period and rink direction
+
+function renderRinkStatus() {
+  const game = currentGame();
+  const flipped = isFlipped(game);
+  $('rinkStatus').innerHTML = `
+    <span class="group" role="group" aria-label="Period being played">
+      <span class="group-label">Now playing</span>
+      ${PERIODS.map((p) => `<button type="button" class="pick" data-action="period" data-value="${p}" aria-pressed="${game.period === p}">${periodLabel(p)}</button>`).join('')}
+    </span>
+    <span class="direction ${flipped ? 'left' : ''}">Skidmore attacks ${flipped ? 'left' : 'right'} ${ICON_ARROW}</span>
+    <button type="button" class="plain" data-action="flip">Flip rink</button>`;
+}
+
+function renderPeriodCheck() {
+  const game = currentGame();
+  const show = needsPeriodCheck(game);
+  ui.periodCheckShown = show;
+  $('periodCheck').hidden = !show;
+  if (!show) return;
+  const minutes = Math.floor((Date.now() - Date.parse(game.faceoffs.at(-1).at)) / 60000);
+  const next = nextPeriod(game.period);
+  $('periodCheck').innerHTML = `
+    <p><b>${minutes} minutes since the last faceoff.</b> Is it still ${periodLabel(game.period)}?</p>
+    <button type="button" class="primary" data-action="period" data-value="${next}">Move to ${periodLabel(next)}</button>
+    <button type="button" class="plain" data-action="keepPeriod">Still ${periodLabel(game.period)}</button>`;
 }
 
 // Rink
@@ -92,7 +137,7 @@ const RINK_MARKINGS = `
 function renderRink() {
   const game = currentGame();
   const flipped = isFlipped(game);
-  const records = circleRecords(filterFaceoffs(game.faceoffs, ui.filter));
+  const records = circleRecords(filterFaceoffs(game.faceoffs, activeFilter(game)));
   const captions = flipped
     ? ['Skidmore attacks', 'Skidmore defends']
     : ['Skidmore defends', 'Skidmore attacks'];
@@ -109,15 +154,18 @@ function renderRink() {
     const classes = ['dot', small ? 'small' : '', circle.id === 'C' ? 'center' : '', toneClass(rec),
       ui.sel.circle === circle.id ? 'selected' : ''].join(' ');
     const summary = hasStats ? `, Skidmore ${formatRecord(rec)}, ${formatPct(rec)}` : '';
+    const key = circleKey(circle, flipped);
     return `<g class="${classes}" role="button" tabindex="0" data-action="circle" data-value="${circle.id}"
-        aria-pressed="${ui.sel.circle === circle.id}" aria-label="${circleLabel(circle)}${summary}">
+        aria-pressed="${ui.sel.circle === circle.id}" aria-label="${circleLabel(circle)}${summary}" aria-keyshortcuts="${key}">
       <circle cx="${x}" cy="${y}" r="${circle.r}"/>
+      <text class="dot-key" x="${x + circle.r * 0.8}" y="${y - circle.r * 0.78}">${key.toUpperCase()}</text>
       <text class="dot-name" x="${x}" y="${nameY}">${name}</text>
       ${hasStats ? `<text class="dot-rec" x="${x}" y="${nameY + step * 0.9}">${formatRecord(rec)}</text>
       <text class="dot-pct ${thin}" x="${x}" y="${nameY + step * 1.65}">${formatPct(rec)}</text>` : ''}
     </g>`;
   }).join('');
 
+  $('rink').classList.toggle('waiting', nextStep() === 'circle');
   $('rink').innerHTML = `${RINK_MARKINGS}
     <text class="rink-caption" x="60" y="43.7">${captions[0]}</text>
     <text class="rink-caption" x="140" y="43.7">${captions[1]}</text>
@@ -163,14 +211,21 @@ function contextLine(game) {
 function renderEntry() {
   const game = currentGame();
   const step = nextStep();
-  const { skid, opp } = ui.sel;
+  const { circle, skid, opp } = ui.sel;
   const oppNums = opponentNumbers(game);
   const canRemoveOpp = opp !== null && !game.faceoffs.some((f) => f.opp === opp);
-  const showMessage = step === 'circle' && ui.message;
-  const ready = step === 'winner';
+  const showMessage = step === 'circle' && skid === null && opp === null && ui.message;
+  const blocked = step === 'winner' && needsPeriodCheck(game);
+  const ready = step === 'winner' && !blocked;
+  const hasSelection = circle !== null || skid !== null || opp !== null;
+  const promptText = blocked ? 'Answer the period question above to save' : PROMPTS[step];
 
   $('entry').innerHTML = `
-    <p class="prompt ${showMessage ? 'saved' : ''}" role="status">${esc(showMessage || PROMPTS[step])}</p>
+    <div class="prompt-row">
+      <p class="prompt ${showMessage ? ui.outcome : ''}" id="prompt" role="status">${esc(showMessage || promptText)}</p>
+      ${showMessage && ui.outcome ? '<button type="button" class="plain" data-action="undo">Undo <kbd>U</kbd></button>' : ''}
+      ${hasSelection ? '<button type="button" class="plain" data-action="clear">Clear <kbd>Esc</kbd></button>' : ''}
+    </div>
     <div class="step ${step === 'skid' ? 'active' : ''}">
       <span class="step-label">Skidmore</span>
       <div class="jerseys">
@@ -184,18 +239,34 @@ function renderEntry() {
         ${oppNums.map((n) => `<button type="button" class="jersey" data-action="opp" data-value="${n}" aria-pressed="${opp === n}"><b>${n}</b></button>`).join('')}
         <form class="opp-form" id="oppForm">
           <label class="visually-hidden" for="oppInput">New opposing number</label>
-          <input id="oppInput" inputmode="numeric" maxlength="2" pattern="[0-9]{1,2}" placeholder="New number" autocomplete="off">
+          <input id="oppInput" inputmode="numeric" maxlength="2" placeholder="New number" autocomplete="off">
           <button type="submit">Add</button>
         </form>
         ${canRemoveOpp ? `<button type="button" class="plain" data-action="removeOpp" data-value="${opp}">Remove #${opp}</button>` : ''}
       </div>
     </div>
     <p class="context">${contextLine(game)}</p>
-    <div class="winners">
-      <button type="button" class="win us" data-action="win" data-value="S" ${ready ? '' : 'disabled'}>Skidmore won<small>${skid !== null ? esc(skidLabel(skid)) : 'Pick both players first'}</small></button>
-      <button type="button" class="win them" data-action="win" data-value="O" ${ready ? '' : 'disabled'}>${esc(game.opponent)} won<small>${opp !== null ? `#${opp}` : 'Pick both players first'}</small></button>
-      <button type="button" class="plain" data-action="clear">Clear</button>
+    <div class="winners ${ready ? 'active' : ''}" id="winners" tabindex="-1">
+      <button type="button" class="win us" data-action="win" data-value="S" ${ready ? '' : 'disabled'}>Skidmore won <kbd>J</kbd><small>${skid !== null ? esc(skidLabel(skid)) : 'Pick both players first'}</small></button>
+      <button type="button" class="win them" data-action="win" data-value="O" ${ready ? '' : 'disabled'}>${esc(game.opponent)} won <kbd>K</kbd><small>${opp !== null ? `#${opp}` : 'Pick both players first'}</small></button>
     </div>`;
+}
+
+// Puts focus on the next step, so the keyboard flow carries on from where it is.
+function advanceFocus() {
+  const step = nextStep();
+  if (step === 'circle') document.querySelector('.dot')?.focus({ preventScroll: true });
+  if (step === 'skid') document.querySelector('.jersey')?.focus({ preventScroll: true });
+  if (step === 'opp') $('oppInput').focus({ preventScroll: true });
+  if (step === 'winner') $('winners').focus({ preventScroll: true });
+}
+
+function flashSave(outcome, circleId) {
+  const entry = $('entry');
+  entry.classList.remove('flash-win', 'flash-loss');
+  void entry.offsetWidth; // Restarts the animation when two saves land close together.
+  entry.classList.add(`flash-${outcome}`);
+  document.querySelector(`.dot[data-value="${circleId}"]`)?.classList.add('pulse');
 }
 
 // Live stats panel
@@ -219,7 +290,7 @@ function sortHeader(key, label, cls = '') {
   const active = ui.sort.key === key;
   const ascending = (key === 'num' || key === 'name') === (ui.sort.dir === 1);
   const aria = active ? `aria-sort="${ascending ? 'ascending' : 'descending'}"` : '';
-  const arrow = active ? (ascending ? ' ▲' : ' ▼') : '';
+  const arrow = active ? `<span class="${ascending ? '' : 'down'}">${ICON_SORT}</span>` : '';
   return `<th scope="col" class="${cls}" ${aria}><button type="button" data-action="sort" data-value="${key}">${label}${arrow}</button></th>`;
 }
 
@@ -234,7 +305,7 @@ function playerTable(players, { extended = false, team = null } = {}) {
   return `<table>
     <thead><tr>
       ${sortHeader('num', '#', 'left')}${sortHeader('name', 'Player', 'left')}
-      ${extended ? '<th scope="col" class="left">Hand</th>' : ''}
+      ${extended ? '<th scope="col" class="left">Shoots</th>' : ''}
       ${sortHeader('total', 'Total')}${sortHeader('pct', '%')}
       ${zoneCols.map(([z, label]) => sortHeader(z, label)).join('')}
     </tr></thead>
@@ -250,7 +321,7 @@ function playerTable(players, { extended = false, team = null } = {}) {
 }
 
 function periodFilters() {
-  const options = [['all', 'Game'], ...PERIODS.map((p) => [p, p === 'OT' ? 'OT' : `P${p}`])];
+  const options = [['all', 'Game'], ['now', 'This period'], ...PERIODS.map((p) => [p, periodLabel(p)])];
   return `<div class="filters" role="group" aria-label="Show stats for">
     ${options.map(([value, label]) => `<button type="button" data-action="filter" data-value="${value}" aria-pressed="${ui.filter === value}">${label}</button>`).join('')}
   </div>`;
@@ -264,32 +335,37 @@ function glanceItem(label, rec) {
 
 function renderPanel() {
   const game = currentGame();
-  const faceoffs = filterFaceoffs(game.faceoffs, ui.filter);
-  const { team, players } = tally([game], ui.filter);
+  const period = activeFilter(game);
+  const faceoffs = filterFaceoffs(game.faceoffs, period);
+  const { team, players } = tally([game], period);
   const opps = opponents(faceoffs);
   const recent = game.faceoffs.slice(-20).reverse();
+  const stale = period !== 'all' && period !== game.period;
+  const none = period === 'all' ? 'after the first faceoff' : `once ${periodLabel(period)} has a faceoff`;
 
   const oppRows = opps.map((o) => {
     const open = ui.openOpp === o.num;
-    return `<tr><th scope="row" class="left"><button type="button" class="link" data-action="toggleOpp" data-value="${o.num}" aria-expanded="${open}">#${o.num}</button></th>
-      ${recCell(o.rec)}${pctCell(o.rec)}<td class="left">${o.vs.size} ${o.vs.size === 1 ? 'player' : 'players'} faced</td></tr>
+    return `<tr><th scope="row" class="left"><button type="button" class="link opp-link ${open ? 'open' : ''}" data-action="toggleOpp" data-value="${o.num}" aria-expanded="${open}">#${o.num} ${ICON_OPEN}</button></th>
+      ${recCell(o.rec)}${pctCell(o.rec)}<td class="left">${o.vs.size} ${o.vs.size === 1 ? 'player' : 'players'}</td></tr>
       ${open ? `<tr class="expanded"><td colspan="4">${[...o.vs.entries()].sort((a, b) => draws(b[1]) - draws(a[1])).map(([num, rec]) => `<span>${esc(skidLabel(num))} ${formatRecord(rec)}</span>`).join('')}</td></tr>` : ''}`;
   }).join('');
 
   $('panel').innerHTML = `
     <div class="panel-head"><h2 class="panel-title">Live stats</h2><span class="spacer"></span>${periodFilters()}</div>
+    ${stale ? `<p class="filter-note">Showing ${periodLabel(period)} while you log ${periodLabel(game.period)}. New faceoffs won't appear here. <button type="button" class="link" data-action="filter" data-value="all">Show whole game</button></p>` : ''}
     <div class="glance">${glanceItem('Overall', team.total)}${glanceItem('Defense', team.D)}${glanceItem('Offense', team.O)}${glanceItem('Neutral', team.N)}</div>
-    <section class="panel-section grow">
+    <section class="panel-section big">
       <h2 class="panel-title">Skidmore by zone</h2>
-      <div class="scroll">${players.size ? playerTable(players) : '<p class="empty">Player records appear after the first faceoff.</p>'}</div>
+      <div class="scroll">${players.size ? playerTable(players) : `<p class="empty">Player records appear ${none}.</p>`}</div>
     </section>
-    <section class="panel-section grow">
+    <section class="panel-section">
       <h2 class="panel-title">Skidmore against each opponent</h2>
-      <div class="scroll">${opps.length ? `<table><thead><tr><th scope="col" class="left">Their #</th><th scope="col">Skidmore</th><th scope="col">%</th><th scope="col" class="left">Click # for split</th></tr></thead><tbody>${oppRows}</tbody></table>` : '<p class="empty">Opposing players appear after the first faceoff.</p>'}</div>
+      <div class="scroll">${opps.length ? `<table><thead><tr><th scope="col" class="left">Their #</th><th scope="col">Skidmore</th><th scope="col">%</th><th scope="col" class="left">Faced</th></tr></thead><tbody>${oppRows}</tbody></table>` : `<p class="empty">Opposing players appear ${none}.</p>`}</div>
     </section>
-    <section class="panel-section short">
+    <section class="panel-section">
       <div class="panel-head"><h2 class="panel-title">Recent faceoffs</h2><span class="spacer"></span>
-        ${game.faceoffs.length ? '<button type="button" class="link" data-action="undo">Undo last</button>' : ''}</div>
+        ${game.faceoffs.length ? `<button type="button" class="link" data-action="openRepair">Fix period mistake</button>
+        <button type="button" class="link" data-action="undo">Undo last</button>` : ''}</div>
       <div class="scroll">${recent.length ? `<ul class="recent">${recent.map((f) => `<li><button type="button" data-action="editFaceoff" data-value="${f.id}" aria-label="Edit ${periodLabel(f.period)} ${zoneLabel(f.circle)} faceoff">
         <span>${periodLabel(f.period)}</span><span>${zoneOf(f.circle)}</span><span>${esc(skidLabel(f.skid))} vs #${f.opp}</span>
         <span class="${f.winner === 'S' ? 'res-win' : 'res-loss'}">${f.winner === 'S' ? 'Won' : 'Lost'}</span></button></li>`).join('')}</ul>` : '<p class="empty">Nothing logged yet.</p>'}</div>
@@ -304,12 +380,14 @@ function renderLive() {
   live.querySelector('.start')?.remove();
   if (!hasGame) {
     live.insertAdjacentHTML('beforeend', `<div class="start">
-      <h1>Start a game to log faceoffs</h1>
+      <h2>Start a game to log faceoffs</h2>
       <p>Enter the opponent, then click the circle, both players and the winner for each draw.</p>
       <button type="button" class="primary" data-action="newGame">Start a game</button>
     </div>`);
     return;
   }
+  renderRinkStatus();
+  renderPeriodCheck();
   renderRink();
   renderEntry();
   renderPanel();
@@ -337,11 +415,9 @@ function renderFull() {
   const game = state.games.find((g) => g.id === scope);
   const games = game ? [game] : state.games;
   const canFilter = Boolean(game) && !game.imported;
-  const period = canFilter ? ui.filter : 'all';
+  const period = canFilter ? activeFilter(game) : 'all';
   const { team, players } = tally(games, period);
-  for (const p of state.roster) {
-    if (!players.has(p.num)) players.set(p.num, tally([]).team);
-  }
+  const noDraws = state.roster.filter((p) => !players.has(p.num)).length;
 
   let matchups;
   if (game) {
@@ -359,7 +435,7 @@ function renderFull() {
   }
 
   $('view-full').innerHTML = `
-    <div class="page-head">
+    <div class="page-head sticky">
       <label>Show <select id="scopeSelect">
         <option value="season" ${scope === 'season' ? 'selected' : ''}>Season, all games</option>
         ${state.games.map((g) => `<option value="${esc(g.id)}" ${scope === g.id ? 'selected' : ''}>${esc(gameTitle(g))}</option>`).join('')}
@@ -369,7 +445,8 @@ function renderFull() {
     <section class="sheet">
       <h2>Skidmore by zone</h2>
       <p class="hint">Zone 1 is left of the goal, facing that goal. Percentages are muted under ${MIN_DRAWS} draws.</p>
-      ${playerTable(players, { extended: true, team })}
+      ${players.size ? playerTable(players, { extended: true, team }) : '<p class="empty">No faceoffs here yet.</p>'}
+      ${players.size && noDraws ? `<p class="hint table-note">${noDraws} other roster ${noDraws === 1 ? 'player has' : 'players have'} no draws here.</p>` : ''}
     </section>
     <section class="sheet">
       <h2>Skidmore against each opponent</h2>
@@ -380,8 +457,12 @@ function renderFull() {
 
 // Games and roster view
 
-function gameTitle(game) {
-  return game.date ? `${game.opponent}, ${game.date}` : game.opponent;
+function backupStatus() {
+  const logged = state.games.flatMap((g) => g.faceoffs);
+  if (!state.lastBackupAt) return logged.length ? `No backup yet, and ${logged.length} logged faceoffs are only in this browser.` : 'No backup yet.';
+  const when = new Date(state.lastBackupAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  const newer = logged.filter((f) => f.at > state.lastBackupAt).length;
+  return `Last backup ${when}. ${newer ? `${newer} ${newer === 1 ? 'faceoff' : 'faceoffs'} logged since.` : 'Nothing logged since.'}`;
 }
 
 function renderManage() {
@@ -397,17 +478,18 @@ function renderManage() {
           return `<tr><th scope="row" class="left">${esc(gameTitle(g))}${current ? ' (open)' : ''}${g.imported ? ' <span class="hint">from sheet</span>' : ''}</th>
             <td>${formatRecord(total)}</td>
             <td><div class="row-actions">
-              ${g.imported ? '' : `<button type="button" class="plain" data-action="openGame" data-value="${esc(g.id)}">Open</button>
-              <button type="button" class="plain" data-action="exportCsv" data-value="${esc(g.id)}">Export CSV</button>`}
+              ${g.imported || current ? '' : `<button type="button" class="plain" data-action="openGame" data-value="${esc(g.id)}">Open</button>`}
+              ${g.imported ? '' : `<button type="button" class="plain" data-action="exportCsv" data-value="${esc(g.id)}">Export CSV</button>`}
               <button type="button" class="plain" data-action="renameGame" data-value="${esc(g.id)}">Rename</button>
-              <button type="button" class="plain" data-action="deleteGame" data-value="${esc(g.id)}">Delete</button>
+              <button type="button" class="quiet" data-action="deleteGame" data-value="${esc(g.id)}">Delete</button>
             </div></td></tr>`;
         }).join('')}</tbody></table>
       </section>
       <section class="sheet">
         <h2>Backup</h2>
         <p class="hint">Game data is saved only in this browser on this laptop. Download a backup after each game.</p>
-        <div class="row-actions" style="justify-content:flex-start">
+        <p class="backup-status" id="backupStatus">${esc(backupStatus())}</p>
+        <div class="row-actions start-aligned">
           <button type="button" class="plain" data-action="backup">Download backup</button>
           <label class="plain file-button">Restore from backup<input type="file" id="restoreFile" accept="application/json,.json"></label>
         </div>
@@ -415,7 +497,7 @@ function renderManage() {
     </div>
     <section class="sheet">
       <h2>Roster</h2>
-      <p class="hint">Regular centers appear first when logging.</p>
+      <p class="hint">Regular centers get the large buttons when logging.</p>
       <table><thead><tr><th scope="col" class="left">#</th><th scope="col" class="left">Name</th><th scope="col" class="left">Shoots</th><th scope="col" class="left">Center</th><th scope="col"><span class="visually-hidden">Remove</span></th></tr></thead>
       <tbody>${[...state.roster].sort((a, b) => a.num - b.num).map((p) => `<tr>
         <th scope="row" class="left">${p.num}</th>
@@ -424,7 +506,7 @@ function renderManage() {
           ${['', 'L', 'R'].map((h) => `<option value="${h}" ${p.hand === h ? 'selected' : ''}>${h || 'Not set'}</option>`).join('')}
         </select></td>
         <td><input type="checkbox" aria-label="Regular center, number ${p.num}" data-roster="center" data-num="${p.num}" ${p.center ? 'checked' : ''}></td>
-        <td><button type="button" class="plain" data-action="removePlayer" data-value="${p.num}">Remove</button></td>
+        <td><button type="button" class="quiet" data-action="removePlayer" data-value="${p.num}">Remove</button></td>
       </tr>`).join('')}</tbody></table>
       <form class="add-player" id="addPlayer">
         <input type="number" id="newNum" min="0" max="99" placeholder="#" aria-label="New player number" required>
@@ -450,19 +532,20 @@ function clearSelection() {
 }
 
 function pick(field, value) {
-  ui.sel[field] = ui.sel[field] === value ? null : value;
+  ui.sel[field] = value;
   ui.message = '';
+  ui.outcome = '';
 }
 
-function faceoffPhrase(f, game) {
-  const winner = f.winner === 'S' ? 'Skidmore' : game.opponent;
-  return `${zoneLabel(f.circle)}: ${skidLabel(f.skid)} vs #${f.opp}, ${winner} won`;
+function faceoffPhrase(f) {
+  return `${periodLabel(f.period)} ${zoneLabel(f.circle)}: ${skidLabel(f.skid)} vs #${f.opp}`;
 }
 
 function openGame(id) {
   state.currentGameId = id;
   clearSelection();
   ui.message = '';
+  ui.outcome = '';
   ui.filter = 'all';
   ui.openOpp = null;
   ui.statsScope = null;
@@ -477,12 +560,21 @@ const actions = {
     persist();
   },
   period(value) {
-    currentGame().period = value;
+    const game = currentGame();
+    game.period = value;
+    game.periodConfirmedAt = new Date().toISOString();
+    // The rink may turn, so a circle picked before the change would point at the wrong spot.
+    ui.sel.circle = null;
+    persist();
+  },
+  keepPeriod() {
+    currentGame().periodConfirmedAt = new Date().toISOString();
     persist();
   },
   flip() {
     const game = currentGame();
     game.startFlipped = !game.startFlipped;
+    ui.sel.circle = null;
     persist();
   },
   circle(value) { pick('circle', value); },
@@ -494,9 +586,14 @@ const actions = {
     ui.sel.opp = null;
     persist();
   },
-  clear() { clearSelection(); ui.message = ''; },
+  clear() {
+    clearSelection();
+    ui.message = '';
+    ui.outcome = '';
+  },
   win(value) {
     const game = currentGame();
+    if (nextStep() !== 'winner' || needsPeriodCheck(game)) return;
     const f = {
       id: crypto.randomUUID(),
       period: game.period,
@@ -508,13 +605,17 @@ const actions = {
     };
     game.faceoffs.push(f);
     clearSelection();
-    ui.message = `Saved ${faceoffPhrase(f, game)}`;
+    ui.message = `${value === 'S' ? 'Skidmore' : game.opponent} won. ${faceoffPhrase(f)}`;
+    ui.outcome = value === 'S' ? 'win' : 'loss';
     persist();
   },
   undo() {
     const game = currentGame();
     const f = game.faceoffs.pop();
-    if (f) ui.message = `Removed ${faceoffPhrase(f, game)}`;
+    if (f) {
+      ui.message = `Removed ${faceoffPhrase(f)}`;
+      ui.outcome = '';
+    }
     persist();
   },
   filter(value) { ui.filter = value; },
@@ -526,13 +627,20 @@ const actions = {
   editFaceoff(value) { openEditDialog(value); return false; },
   deleteFaceoff() {
     const game = currentGame();
-    game.faceoffs = game.faceoffs.filter((f) => f.id !== ui.editingId);
+    const f = game.faceoffs.find((x) => x.id === ui.editingId);
+    if (!confirm(`Delete this faceoff? ${faceoffPhrase(f)}. This cannot be undone.`)) return false;
+    game.faceoffs = game.faceoffs.filter((x) => x.id !== ui.editingId);
+    ui.message = `Deleted ${faceoffPhrase(f)}`;
+    ui.outcome = '';
     $('editDialog').close();
     persist();
+    return undefined;
   },
   closeDialog(value) { $(value).close(); return false; },
   openText() { openTextDialog(); return false; },
   copyText() { copyMessage(); return false; },
+  openHelp() { $('helpDialog').showModal(); return false; },
+  openRepair() { openRepairDialog(); return false; },
   newGame() { openGameDialog(null); return false; },
   renameGame(value) { openGameDialog(value); return false; },
   openGame(value) { openGame(value); },
@@ -553,8 +661,10 @@ const actions = {
   },
   backup() {
     const today = new Date().toLocaleDateString('en-CA');
+    state.lastBackupAt = new Date().toISOString();
+    persist();
     downloadFile(`skidmore-faceoffs-backup-${today}.json`, JSON.stringify(state, null, 2), 'application/json');
-    return false;
+    return undefined;
   },
   removePlayer(value) {
     const num = Number(value);
@@ -565,40 +675,100 @@ const actions = {
   },
 };
 
-function run(element) {
-  const { action, value } = element.dataset;
+const STEP_ACTIONS = new Set(['circle', 'skid', 'opp', 'win', 'undo']);
+
+function perform(action, value) {
   const selector = `[data-action="${action}"]${value === undefined ? '' : `[data-value="${CSS.escape(value)}"]`}`;
+  const circle = ui.sel.circle;
   if (actions[action](value) === false) return;
   render();
+  if (action === 'win' && ui.outcome) flashSave(ui.outcome, circle);
+  if (ui.view === 'live' && STEP_ACTIONS.has(action)) advanceFocus();
   // Rendering replaces the buttons, so put keyboard focus back on the one that was used.
-  if (document.activeElement === document.body) document.querySelector(selector)?.focus({ preventScroll: true });
-  if ((action === 'skid' || action === 'circle') && nextStep() === 'opp') $('oppInput')?.focus();
+  else if (document.activeElement === document.body) document.querySelector(selector)?.focus({ preventScroll: true });
 }
 
 document.addEventListener('click', (event) => {
   const element = event.target.closest('[data-action]');
-  if (element && !element.disabled) run(element);
+  if (element && !element.disabled) perform(element.dataset.action, element.dataset.value);
 });
+
+// Typing a jersey number. "1" waits briefly in case it's the start of "12".
+function typeJersey(digit) {
+  clearTimeout(ui.jerseyTimer);
+  const typed = ui.jerseyTyped + digit;
+  const numbers = state.roster.map((p) => String(p.num));
+  const exact = numbers.includes(typed);
+  const longer = numbers.some((n) => n !== typed && n.startsWith(typed));
+  ui.jerseyTyped = '';
+  if (longer) {
+    ui.jerseyTyped = typed;
+    $('prompt').textContent = `Skidmore #${typed}`;
+    ui.jerseyTimer = setTimeout(() => {
+      ui.jerseyTyped = '';
+      if (exact) perform('skid', typed);
+      else renderEntry();
+    }, 700);
+  } else if (exact) {
+    perform('skid', typed);
+  } else {
+    $('prompt').textContent = `No #${typed} on the roster`;
+  }
+}
+
+function handleShortcut(event) {
+  if (ui.view !== 'live' || !currentGame() || event.metaKey || event.ctrlKey || event.altKey || event.repeat) return;
+  if (/^(INPUT|SELECT|TEXTAREA)$/.test(event.target.tagName)) return;
+  const key = event.key.toLowerCase();
+  const flipped = isFlipped(currentGame());
+  const circle = CIRCLES.find((c) => circleKey(c, flipped) === key);
+
+  if (circle) {
+    event.preventDefault();
+    perform('circle', circle.id);
+  } else if ((key === 'j' || key === 'k') && !document.querySelector('.win').disabled) {
+    event.preventDefault();
+    perform('win', key === 'j' ? 'S' : 'O');
+  } else if (key === 'u' && currentGame().faceoffs.length) {
+    event.preventDefault();
+    perform('undo');
+  } else if (/^\d$/.test(key)) {
+    if (ui.sel.skid === null) {
+      event.preventDefault();
+      typeJersey(key);
+    } else if (ui.sel.opp === null) {
+      $('oppInput').focus(); // The digit lands in the opposing number box.
+    }
+  }
+}
 
 document.addEventListener('keydown', (event) => {
   if (document.querySelector('dialog[open]')) return;
   const dot = event.target.closest?.('.dot');
   if (dot && (event.key === 'Enter' || event.key === ' ')) {
     event.preventDefault();
-    run(dot);
+    perform('circle', dot.dataset.value);
   } else if (event.key === 'Escape' && ui.view === 'live' && currentGame()) {
     actions.clear();
     render();
+  } else {
+    handleShortcut(event);
   }
 });
 
 // Forms and dialogs
 
+document.addEventListener('input', (event) => {
+  const { target } = event;
+  if (target.id === 'oppInput' || target.id === 'editOpp') target.value = target.value.replace(/\D/g, '');
+  if (target.id === 'repairCount') updateRepairPreview();
+});
+
 document.addEventListener('submit', (event) => {
   if (event.target.id === 'oppForm') {
     event.preventDefault();
     const text = $('oppInput').value.trim();
-    if (!/^\d{1,2}$/.test(text)) {
+    if (!text) {
       $('oppInput').focus();
       return;
     }
@@ -610,8 +780,10 @@ document.addEventListener('submit', (event) => {
     const midEntry = ui.sel.circle !== null || ui.sel.skid !== null;
     if (midEntry) ui.sel.opp = num;
     ui.message = '';
+    ui.outcome = '';
     render();
-    if (!midEntry) $('oppInput').focus();
+    if (midEntry) advanceFocus();
+    else $('oppInput').focus();
   }
   if (event.target.id === 'addPlayer') {
     event.preventDefault();
@@ -641,6 +813,8 @@ document.addEventListener('change', async (event) => {
     persist();
   }
   if (target.id === 'restoreFile') await restoreBackup(target);
+  if (target.id === 'textPeriod') writeCoachMessage();
+  if (target.id === 'repairPeriod' || target.id === 'repairSwap') updateRepairPreview();
 });
 
 async function restoreBackup(input) {
@@ -673,7 +847,7 @@ function openEditDialog(id) {
     <label>Period <select id="editPeriod">${PERIODS.map((p) => `<option value="${p}" ${f.period === p ? 'selected' : ''}>${periodLabel(p)}</option>`).join('')}</select></label>
     <label>Circle <select id="editCircle">${CIRCLES.map((c) => `<option value="${c.id}" ${f.circle === c.id ? 'selected' : ''}>${circleLabel(c)}</option>`).join('')}</select></label>
     <label>Skidmore player <select id="editSkid">${skidOptions.map(([n, label]) => `<option value="${n}" ${f.skid === n ? 'selected' : ''}>${esc(label)}</option>`).join('')}</select></label>
-    <label>Opposing number <input id="editOpp" inputmode="numeric" required pattern="[0-9]{1,2}" maxlength="2" value="${f.opp}"></label>
+    <label>Opposing number <input id="editOpp" inputmode="numeric" required maxlength="2" value="${f.opp}"></label>
     <fieldset><legend>Winner</legend>
       <label><input type="radio" name="editWinner" value="S" ${f.winner === 'S' ? 'checked' : ''}> Skidmore</label>
       <label><input type="radio" name="editWinner" value="O" ${f.winner === 'O' ? 'checked' : ''}> ${esc(currentGame().opponent)}</label>
@@ -684,23 +858,28 @@ function openEditDialog(id) {
 $('editForm').addEventListener('submit', (event) => {
   event.preventDefault();
   const f = currentGame().faceoffs.find((x) => x.id === ui.editingId);
-  f.period = $('editPeriod').value;
-  f.circle = $('editCircle').value;
-  f.skid = Number($('editSkid').value);
-  f.opp = Number($('editOpp').value);
-  f.winner = $('editForm').elements.editWinner.value;
-  persist();
+  if (f) {
+    f.period = $('editPeriod').value;
+    f.circle = $('editCircle').value;
+    f.skid = Number($('editSkid').value);
+    f.opp = Number($('editOpp').value);
+    f.winner = $('editForm').elements.editWinner.value;
+    persist();
+  }
   $('editDialog').close();
-  render();
 });
+
+function writeCoachMessage() {
+  $('textBody').value = summaryText(currentGame(), state.roster, $('textPeriod').value);
+  $('copyStatus').textContent = '';
+}
 
 function openTextDialog() {
   const game = currentGame();
-  $('textBody').value = summaryText(game, state.roster, ui.filter);
-  $('textScope').textContent = ui.filter === 'all'
-    ? 'Whole game so far. Edit anything before copying.'
-    : `${periodLabel(ui.filter)} only, following the live stats filter. Edit anything before copying.`;
-  $('copyStatus').textContent = '';
+  const played = PERIODS.filter((p) => game.faceoffs.some((f) => f.period === p));
+  $('textPeriod').innerHTML = `<option value="all">Whole game so far</option>
+    ${played.map((p) => `<option value="${p}">${periodLabel(p)} only</option>`).join('')}`;
+  writeCoachMessage();
   $('textDialog').showModal();
 }
 
@@ -744,8 +923,57 @@ $('gameForm').addEventListener('submit', (event) => {
   render();
 });
 
-// The delete button inside the edit dialog changes the page behind it.
+function openRepairDialog() {
+  const game = currentGame();
+  $('repairCount').max = game.faceoffs.length;
+  $('repairCount').value = lastStretchLength(game.faceoffs);
+  $('repairPeriod').innerHTML = PERIODS.map((p) => `<option value="${p}" ${game.period === p ? 'selected' : ''}>${periodLabel(p)}</option>`).join('');
+  $('repairSwap').checked = true;
+  updateRepairPreview();
+  $('repairDialog').showModal();
+}
+
+function updateRepairPreview() {
+  const { faceoffs } = currentGame();
+  const count = Math.min(Number($('repairCount').value), faceoffs.length);
+  if (count < 1) {
+    $('repairPreview').textContent = '';
+    return;
+  }
+  const first = faceoffs[faceoffs.length - count];
+  const swap = $('repairSwap').checked;
+  const example = swap ? `, for example ${zoneLabel(first.circle)} becomes ${zoneLabel(swapEnds(first.circle))}` : '';
+  $('repairPreview').textContent = `Changes ${count} ${count === 1 ? 'faceoff' : 'faceoffs'}, starting with ${faceoffPhrase(first)}. Moves them to ${periodLabel($('repairPeriod').value)}${example}.`;
+}
+
+$('repairForm').addEventListener('submit', (event) => {
+  event.preventDefault();
+  const game = currentGame();
+  const count = Number($('repairCount').value);
+  const period = $('repairPeriod').value;
+  game.faceoffs = repairFaceoffs(game.faceoffs, count, period, $('repairSwap').checked);
+  ui.message = `Fixed ${count} ${count === 1 ? 'faceoff' : 'faceoffs'}, now in ${periodLabel(period)}`;
+  ui.outcome = '';
+  persist();
+  $('repairDialog').close();
+});
+
+// Closing an edit or repair dialog changes the page behind it.
 $('editDialog').addEventListener('close', render);
+$('repairDialog').addEventListener('close', render);
+
+// Keeps two open tabs on the same data, so one can't overwrite the other's faceoffs.
+window.addEventListener('storage', (event) => {
+  if (event.key !== KEY || !event.newValue) return;
+  Object.assign(state, load());
+  render();
+});
+
+// A long gap can start while the page sits idle, such as during an intermission.
+setInterval(() => {
+  const game = currentGame();
+  if (ui.view === 'live' && game && needsPeriodCheck(game) !== ui.periodCheckShown) render();
+}, 30000);
 
 navigator.storage?.persist?.();
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');

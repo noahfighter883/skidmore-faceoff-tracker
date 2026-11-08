@@ -31,10 +31,65 @@ export function circlePosition(circle, flipped) {
   return flipped ? { x: 200 - circle.x, y: 85 - circle.y } : { x: circle.x, y: circle.y };
 }
 
+// The key for each circle follows where it sits on screen, so it changes when the rink flips.
+export function circleKey(circle, flipped) {
+  if (circle.id === 'C') return 'd';
+  const { x, y } = circlePosition(circle, flipped);
+  const column = [31, 80, 120, 169].indexOf(x);
+  return (y < 42.5 ? 'qwer' : 'zxcv')[column];
+}
+
 // Period 2 and OT are played from the opposite end to periods 1 and 3.
 export function isFlipped(game) {
   const swapped = game.period === '2' || game.period === 'OT';
   return swapped !== Boolean(game.startFlipped);
+}
+
+// A gap this long between draws usually means an intermission.
+export const PERIOD_GAP_MS = 8 * 60 * 1000;
+
+export function nextPeriod(period) {
+  return PERIODS[PERIODS.indexOf(period) + 1];
+}
+
+// True when a long gap means the period may have changed without being updated.
+export function needsPeriodCheck(game, now = Date.now()) {
+  const lastAt = game.faceoffs.at(-1)?.at;
+  if (!lastAt || !nextPeriod(game.period)) return false;
+  const confirmedAt = game.periodConfirmedAt ? Date.parse(game.periodConfirmedAt) : 0;
+  const since = Math.max(Date.parse(lastAt), confirmedAt);
+  return now - since >= PERIOD_GAP_MS;
+}
+
+// How many of the latest faceoffs came after the last long gap, or 1 if there was no gap.
+export function lastStretchLength(faceoffs) {
+  for (let i = faceoffs.length - 1; i > 0; i -= 1) {
+    if (Date.parse(faceoffs[i].at) - Date.parse(faceoffs[i - 1].at) >= PERIOD_GAP_MS) {
+      return faceoffs.length - i;
+    }
+  }
+  return Math.min(faceoffs.length, 1);
+}
+
+const END_SWAPS = {
+  D1: 'O1', O1: 'D1', D2: 'O2', O2: 'D2',
+  'N-DB': 'N-OT', 'N-OT': 'N-DB', 'N-DT': 'N-OB', 'N-OB': 'N-DT',
+  C: 'C',
+};
+
+// The circle actually played at the same spot on screen if the rink was facing the wrong way.
+export function swapEnds(circleId) {
+  return END_SWAPS[circleId];
+}
+
+// Moves the latest faceoffs to the right period, optionally correcting a backwards rink.
+export function repairFaceoffs(faceoffs, count, period, swap) {
+  const start = Math.max(faceoffs.length - count, 0);
+  return faceoffs.map((f, i) => (i < start ? f : {
+    ...f,
+    period,
+    circle: swap ? swapEnds(f.circle) : f.circle,
+  }));
 }
 
 const blank = () => ({ w: 0, l: 0 });
@@ -195,6 +250,13 @@ export function summaryText(game, roster, period = 'all') {
     if (worst) notes.push(`worst ${worst.zone} ${formatRecord(worst.rec)}`);
     out.push(`${line(label(num), zones.total)}${notes.length ? `: ${notes.join(', ')}` : ''}`);
   }
+  // Keeps the listed players adding up to the team total.
+  const listed = new Set(takers.map(([num]) => num));
+  const others = blank();
+  for (const [num, zones] of players) {
+    if (!listed.has(num)) addTo(others, zones.total.w, zones.total.l);
+  }
+  if (draws(others)) out.push(line('Others', others));
 
   const qualified = opponents(faceoffs)
     .filter((o) => draws(o.rec) >= MIN_DRAWS)

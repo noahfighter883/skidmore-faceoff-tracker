@@ -2,7 +2,7 @@
 import { SEED_GAMES, SEED_ROSTER } from './seed.js';
 import { zoneOf } from './stats.js';
 
-const KEY = 'skidmore-faceoffs-v1';
+export const KEY = 'skidmore-faceoffs-v1';
 
 export function initialState() {
   return {
