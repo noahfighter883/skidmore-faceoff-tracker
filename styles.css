@@ -345,6 +345,9 @@ kbd {
 
 .opp-row .jersey { width: 3rem; padding-block: 0.3rem; }
 
+.opp-centers { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 0.25rem; }
+.opp-row .jersey.center { width: auto; min-width: 5.5rem; padding-block: 0.15rem; }
+
 .jersey[aria-pressed="true"] {
   background: var(--gold);
   border-color: var(--ink);

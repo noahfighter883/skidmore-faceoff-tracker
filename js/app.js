@@ -213,7 +213,11 @@ function renderEntry() {
   const game = currentGame();
   const step = nextStep();
   const { circle, skid, opp } = ui.sel;
-  const oppNums = opponentNumbers(game);
+  // Opposing players with more than 3 faceoffs get their own line of bigger buttons, like Skidmore's centers.
+  const taken = (n) => game.faceoffs.filter((f) => f.opp === n).length;
+  const oppButton = (n, center) => `<button type="button" class="jersey ${center ? 'center' : ''}" data-action="opp" data-value="${n}" aria-pressed="${opp === n}"><b>${n}</b></button>`;
+  const oppCenters = opponentNumbers(game).filter((n) => taken(n) > 3);
+  const oppOthers = opponentNumbers(game).filter((n) => taken(n) <= 3);
   const canRemoveOpp = opp !== null && !game.faceoffs.some((f) => f.opp === opp);
   const showMessage = step === 'circle' && skid === null && opp === null && ui.message;
   const blocked = step === 'winner' && needsPeriodCheck(game);
@@ -237,7 +241,8 @@ function renderEntry() {
     <div class="step ${step === 'opp' ? 'active' : ''}">
       <span class="step-label">Opponent</span>
       <div class="opp-row">
-        ${oppNums.map((n) => `<button type="button" class="jersey" data-action="opp" data-value="${n}" aria-pressed="${opp === n}"><b>${n}</b></button>`).join('')}
+        ${oppCenters.length ? `<div class="opp-centers">${oppCenters.map((n) => oppButton(n, true)).join('')}</div>` : ''}
+        ${oppOthers.map((n) => oppButton(n, false)).join('')}
         <form class="opp-form" id="oppForm">
           <label class="visually-hidden" for="oppInput">New opposing number</label>
           <input id="oppInput" inputmode="numeric" maxlength="2" placeholder="New number" autocomplete="off">

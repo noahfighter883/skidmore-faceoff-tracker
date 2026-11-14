@@ -14,7 +14,7 @@ Log Skidmore hockey faceoffs live, see results by zone and by opposing player, a
 
 1. Click the circle on the rink.
 2. Click the Skidmore player's number.
-3. Click the opposing number, or type a new one and press Return.
+3. Click the opposing number, or type a new one and press Return. Opposing players with more than 3 faceoffs move up to a line of bigger buttons, like Skidmore's regular centers.
 4. Click who won.
 
 The entry area flashes green for a Skidmore win and red for a loss. Click **Undo** beside the message to remove the latest faceoff, or click any recent faceoff to edit or delete it. Press Esc or **Clear** to start an entry over.
