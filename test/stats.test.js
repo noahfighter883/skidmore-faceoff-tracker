@@ -226,8 +226,8 @@ test('coach message names the best and worst player on each side of the ice', ()
 
 test('coach message lists strong and weak circles', () => {
   const text = summaryText(game(notable), SEED_ROSTER);
-  assert.match(text, /^Strong spots:\n#16 Fogu O1 3-0\n#15 Jenkins D2 2-1$/m);
-  assert.match(text, /^Weak spots:\n#12 Chenevert D1 0-3$/m);
+  assert.match(text, /^Strong spots:\n#16 Fogu, left attacking side: 3-0\n#15 Jenkins, right defending side: 2-1$/m);
+  assert.match(text, /^Weak spots:\n#12 Chenevert, left defending side: 0-3$/m);
 });
 
 test('coach message lists best and worst individual matchups', () => {
@@ -244,7 +244,7 @@ test('coach message ignores small samples and caps each list', () => {
   const many = [12, 15, 16, 20].flatMap((num) => [fo('O1', num, 9, 'S'), fo('O1', num, 9, 'S'), fo('O1', num, 9, 'S')]);
   const text = summaryText(game(many), SEED_ROSTER);
   assert.equal(text.match(/vs their #9 3-0/g).length, 2);
-  assert.equal(text.match(/O1 3-0/g).length, 2);
+  assert.equal(text.match(/left attacking side: 3-0/g).length, 2);
 });
 
 test('coach message never calls a losing record best or a winning record worst', () => {
@@ -257,4 +257,21 @@ test('coach message never calls a losing record best or a winning record worst',
 test('an even record is neither best nor worst', () => {
   const list = [fo('O1', 16, 9, 'S'), fo('O1', 16, 9, 'S'), fo('O1', 16, 9, 'O'), fo('O1', 16, 9, 'O')];
   assert.doesNotMatch(summaryText(game(list), SEED_ROSTER), /Best|Worst|spots/);
+});
+
+test('coach message names no circle by number', () => {
+  assert.doesNotMatch(summaryText(game(notable), SEED_ROSTER), /\b[DO][12]\b/);
+});
+
+test('key and worst performers appear in whole-game messages once P2 has been played', () => {
+  const list = [
+    ...[1, 2, 3, 4].map(() => fo('O1', 16, 9, 'S', '1')),
+    ...[1, 2, 3, 4].map(() => fo('D1', 12, 9, 'O', '2')),
+    fo('C', 15, 9, 'S', '2'),
+  ];
+  const text = summaryText(game(list), SEED_ROSTER);
+  assert.match(text, /^Faceoffs vs Hamilton: 5-4 \(56%\)\n\nKey performers:\n#16 Fogu 4-0 \(100%\)\nWorst performers:\n#12 Chenevert 0-4 \(0%\)\n\nDefense/);
+  assert.doesNotMatch(text, /Jenkins 1-0/, 'players under 4 draws are left out');
+  assert.doesNotMatch(summaryText(game(list), SEED_ROSTER, '2'), /performers/);
+  assert.doesNotMatch(summaryText(game(list.filter((f) => f.period === '1')), SEED_ROSTER), /performers/);
 });

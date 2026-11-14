@@ -226,8 +226,15 @@ function worstOf(items) {
 
 const enoughDraws = ({ rec }) => draws(rec) >= MIN_NOTABLE_DRAWS;
 
+// Zone 1 is left of the goal, facing that goal, as on the original tracking sheet.
+const SIDE_NAMES = {
+  D1: 'left defending side', D2: 'right defending side',
+  O1: 'left attacking side', O2: 'right attacking side',
+};
+
 // The key findings to text the coach: who stands out by zone and in individual matchups.
-// He already gets each player's overall numbers, so those are left out. Plain text for a phone.
+// He gets each player's overall numbers separately, so those appear only once P2 has been
+// played, as the best and worst performers. Plain text for a phone.
 export function summaryText(game, roster, period = 'all') {
   const faceoffs = filterFaceoffs(game.faceoffs, period);
   const { team, players } = tally([game], period);
@@ -238,6 +245,19 @@ export function summaryText(game, roster, period = 'all') {
   if (!draws(team.total)) return `No faceoffs logged${scope} against ${game.opponent} yet.`;
 
   const out = [`Faceoffs vs ${game.opponent}${scope}: ${formatRecord(team.total)} (${formatPct(team.total)})`, ''];
+
+  // Whole-game messages from the second intermission on.
+  if (period === 'all' && game.faceoffs.some((f) => f.period !== '1')) {
+    const overall = [...players.entries()]
+      .map(([num, zones]) => ({ text: label(num), rec: zones.total }))
+      .filter(({ rec }) => draws(rec) >= MIN_DRAWS);
+    const listOverall = (items) => items.slice(0, NOTABLE_LIST_LENGTH).map(({ text, rec }) => line(text, rec));
+    const top = listOverall(bestOf(overall));
+    const bottom = listOverall(worstOf(overall));
+    if (top.length) out.push('Key performers:', ...top);
+    if (bottom.length) out.push('Worst performers:', ...bottom);
+    if (top.length || bottom.length) out.push('');
+  }
 
   // Team record for each part of the ice, with the players who stand out there.
   const areas = [['Defense', 'D'], ['Offense', 'O'], ['Neutral', 'N']];
@@ -254,7 +274,7 @@ export function summaryText(game, roster, period = 'all') {
 
   // Single circles, where a player's split can differ from their side of the ice.
   const spots = [...players.entries()].flatMap(([num, zones]) => ['D1', 'D2', 'O1', 'O2']
-    .map((zone) => ({ text: `${label(num)} ${zone}`, rec: zones[zone] })))
+    .map((zone) => ({ text: `${label(num)}, ${SIDE_NAMES[zone]}:`, rec: zones[zone] })))
     .filter(enoughDraws);
   const listRecords = (items) => items.slice(0, NOTABLE_LIST_LENGTH)
     .map(({ text, rec }) => `${text} ${formatRecord(rec)}`);

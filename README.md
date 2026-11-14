@@ -48,10 +48,11 @@ If you do log under the wrong period, click **Fix period mistake** beside Recent
 
 Click **Coach message**, edit the draft if you want, then click **Copy message** and paste it into your text. It covers the whole game unless you choose a single period in the dialog.
 
-The message leaves out each player's overall record, because the coach already has those. It shows:
+It shows:
 
+- from the second intermission on, Skidmore's key and worst performers overall (whole-game messages only, at least 4 draws)
 - the team's Defense, Offense and Neutral records, with the best and worst player in each
-- the strongest and weakest players at a single circle
+- the strongest and weakest players on one side of the ice, such as the left attacking side (left is as you face that goal)
 - the best and worst individual matchups
 
 A player needs at least 3 draws in that zone or matchup to be named. Best means a winning record and worst means a losing one.
