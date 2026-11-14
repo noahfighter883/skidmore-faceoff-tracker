@@ -56,6 +56,10 @@ The message leaves out each player's overall record, because the coach already h
 
 A player needs at least 3 draws in that zone or matchup to be named. Best means a winning record and worst means a losing one.
 
+## Ending a game
+
+Click **End game** in the top bar after the final faceoff. The game closes and stays saved, and you land on **Games and roster** so you can download a backup. To keep logging, click **Open** next to the game there.
+
 ## Keeping your data
 
 Game data is saved only in the browser on your laptop. It isn't sent anywhere or stored in this repo. Clearing browser data erases it, and it won't appear in another browser or on another computer, so download a backup after each game from **Games and roster**, which also shows when you last did.

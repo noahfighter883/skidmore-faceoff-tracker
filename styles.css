@@ -120,6 +120,17 @@ kbd {
   font-weight: 700;
 }
 
+.bar .end {
+  padding: 0.25rem 0.75rem;
+  border: 1px solid rgb(255 255 255 / 0.6);
+  border-radius: 4px;
+  background: none;
+  color: #fff;
+  font-weight: 600;
+}
+
+.bar .end:hover { background: rgb(255 255 255 / 0.15); }
+
 .tabs { display: flex; gap: 0.25rem; }
 
 .tabs button {

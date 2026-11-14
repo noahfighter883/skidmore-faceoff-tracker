@@ -85,7 +85,8 @@ function renderBar() {
   const total = game && tally([game]).team.total;
   $('barGame').innerHTML = !game ? '' : `
     <span class="score" aria-label="Skidmore faceoff record">${formatRecord(total)}<small>${formatPct(total)}</small></span>
-    <button type="button" class="send" data-action="openText">Coach message</button>`;
+    <button type="button" class="send" data-action="openText">Coach message</button>
+    <button type="button" class="end" data-action="endGame">End game</button>`;
   document.querySelectorAll('.tabs button').forEach((b) => {
     if (b.dataset.value === ui.view) b.setAttribute('aria-current', 'page');
     else b.removeAttribute('aria-current');
@@ -459,7 +460,7 @@ function renderFull() {
 
 function backupStatus() {
   const logged = state.games.flatMap((g) => g.faceoffs);
-  if (!state.lastBackupAt) return logged.length ? `No backup yet, and ${logged.length} logged faceoffs are only in this browser.` : 'No backup yet.';
+  if (!state.lastBackupAt) return logged.length ? `No backup yet, and ${logged.length} logged ${logged.length === 1 ? 'faceoff is' : 'faceoffs are'} only in this browser.` : 'No backup yet.';
   const when = new Date(state.lastBackupAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
   const newer = logged.filter((f) => f.at > state.lastBackupAt).length;
   return `Last backup ${when}. ${newer ? `${newer} ${newer === 1 ? 'faceoff' : 'faceoffs'} logged since.` : 'Nothing logged since.'}`;
@@ -644,6 +645,18 @@ const actions = {
   newGame() { openGameDialog(null); return false; },
   renameGame(value) { openGameDialog(value); return false; },
   openGame(value) { openGame(value); },
+  endGame() {
+    const game = currentGame();
+    if (!confirm(`End the game against ${game.opponent}? Its faceoffs stay saved, and you can reopen it from Games and roster.`)) return false;
+    state.currentGameId = null;
+    clearSelection();
+    ui.message = '';
+    ui.outcome = '';
+    // Lands on the backup button, since game data lives only in this browser.
+    ui.view = 'manage';
+    persist();
+    return undefined;
+  },
   deleteGame(value) {
     const game = state.games.find((g) => g.id === value);
     const count = draws(tally([game]).team.total);
